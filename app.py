@@ -7,7 +7,7 @@ import io
 # Configurazione interfaccia per il Deploy
 st.set_page_config(page_title="PDF → Magazzino Excel", page_icon="📦", layout="wide")
 
-# CSS personalizzato per un look professionale
+# CSS personalizzato per stabilizzare la UI e migliorare l'aspetto
 st.markdown("""
     <style>
     .stAlert { margin-top: 1rem; }
@@ -20,16 +20,25 @@ st.markdown("""
         height: 3em;
     }
     .stDataFrame { border: 1px solid #e6e9ef; border-radius: 8px; }
+    /* Nasconde messaggi di errore superflui della libreria */
+    .stException { display: none; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("📦 PDF → Magazzino Excel")
-st.write("Strumento di estrazione dati per Doppler, Sacchi e IDG. Colonna 'N BOLLA' impostata come vuota.")
+st.write("Strumento ottimizzato per Doppler, Sacchi e IDG. Colonna 'N BOLLA' protetta (vuota).")
 
-filtro_attivo = st.checkbox("🔍 Attiva Filtro Anti-Spazzatura (Rimuove intestazioni e piè di pagina)", value=True)
+# Uso di colonne per organizzare meglio lo spazio
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    files = st.file_uploader("Trascina qui le tue Bolle/Fatture PDF", type="pdf", accept_multiple_files=True, key="file_uploader_main")
+
+with col2:
+    st.info("💡 Consiglio: Se l'app dà errore grafico, ricarica la pagina del browser.")
+    filtro_attivo = st.checkbox("🔍 Filtro Anti-Spazzatura", value=True, key="filtro_checkbox")
+
 st.markdown("---")
-
-files = st.file_uploader("Trascina qui le tue Bolle/Fatture PDF", type="pdf", accept_multiple_files=True)
 
 # Struttura colonne ufficiale richiesta
 colonne_magazzino = [
@@ -43,7 +52,8 @@ def clean_num(val):
     """Converte i formati numerici dei PDF (es. 1.250,00) in numeri elaborabili."""
     if not val: return 0.0
     try:
-        s = val.replace("€", "").replace(" ", "").strip()
+        # Rimuove simboli valuta e spazi, gestisce il formato italiano
+        s = str(val).replace("€", "").replace(" ", "").strip()
         if "," in s and "." in s:
             s = s.replace(".", "").replace(",", ".")
         elif "," in s:
@@ -82,7 +92,6 @@ if files:
 
             for pagina in doc:
                 words = pagina.get_text("words")
-                # Ordina le parole per riga (Y) e poi per posizione orizzontale (X)
                 words.sort(key=lambda w: (w[1], w[0]))
                 
                 linee_geometriche = []
@@ -108,14 +117,16 @@ if files:
                     l_low = linea.lower()
 
                     # GESTIONE COMMESSA / ORDINE
-                    if any(x in l_low for x in ["ordine", "vs. ord", "commessa"]):
-                        m = re.search(r"(?:ordine|ord\.|commessa)\s*[:\s]*([\w/-]+)", linea, re.IGNORECASE)
-                        if m: commessa_corrente = m.group(1).strip()
+                    if any(x in l_low for x in ["ordine", "vs. ord", "commessa", "riferimento"]):
+                        m = re.search(r"(?:ordine|ord\.|commessa|riferimento)\s*[:\s]*([\w/-]+)", linea, re.IGNORECASE)
+                        if m: 
+                            val = m.group(1).strip()
+                            if len(val) > 2: commessa_corrente = val
                         continue
 
-                    # FILTRI RIMOZIONE RIGA (Intestazioni, Note Legali, ecc.)
+                    # FILTRI RIMOZIONE RIGA
                     if filtro_attivo:
-                        if any(x in l_low for x in ["pag.1", "telefono", "sede legale", "p.iva", "www.", "pec:", "cap.soc", "destinatario", "spett.le"]): continue
+                        if any(x in l_low for x in ["pag.1", "telefono", "sede legale", "p.iva", "www.", "pec:", "cap.soc", "destinatario", "spett.le", "banca appoggio"]): continue
                         if "disp." in l_low: continue 
 
                     tokens = linea.split()
@@ -123,37 +134,37 @@ if files:
                     udm = ""
                     idx_end = len(tokens)
                     
-                    # Analisi da destra verso sinistra per trovare Qta e Prezzo
+                    # Analisi da destra verso sinistra
                     for i in range(len(tokens)-1, -1, -1):
                         t = tokens[i]
+                        # Doppler a volte usa P2 invece di PZ
+                        t_upper = t.upper().replace("P2", "PZ")
                         if is_valid_number(t):
                             nums.insert(0, t)
                             idx_end = i
-                        elif t.upper() in ["PZ", "NR", "MT", "RT", "KG", "CAD"]:
-                            udm = t.upper()
+                        elif t_upper in ["PZ", "NR", "MT", "RT", "KG", "CAD"]:
+                            udm = t_upper
                             idx_end = i
-                        elif t in ["%", "€", "Disp."]:
+                        elif t in ["%", "€"]:
                             idx_end = i
                         else: break
                     
-                    # Una riga valida deve avere almeno Qta e Prezzo
                     if len(nums) < 2: continue
                     
                     desc_part = tokens[:idx_end]
-                    if not desc_part: continue
+                    if not desc_part or len(desc_part) < 1: continue
 
                     row = {c: "" for c in colonne_magazzino}
                     row["COMMESSA"] = commessa_corrente
                     row["FORNITORE"] = fornitore_rilevato
                     row["DATA"] = data_rilevata
                     row["UDM"] = udm
-                    
-                    # RICHIESTA UTENTE: Colonna sempre presente ma VUOTA
-                    row["N BOLLA"] = ""
+                    row["N BOLLA"] = "" # Sempre vuota come richiesto
 
                     # LOGICA SUDDIVISIONE FAM / CODICE / DESCRIZIONE
                     if len(desc_part) >= 2:
-                        if len(desc_part[0]) <= 5: # Se il primo pezzo è corto, è la FAM
+                        # Se il primo pezzo è molto corto o maiuscolo di 3 lettere, è probabilmente la FAM
+                        if len(desc_part[0]) <= 4:
                             row["FAM"] = desc_part[0]
                             row["CODICE"] = desc_part[1]
                             row["DESCRIZIONE"] = " ".join(desc_part[2:])
@@ -171,27 +182,33 @@ if files:
                     row["PREZZO NETTO"] = round(prezzo_unitario, 4)
                     row["TOTALE ACQUISTA"] = round(prezzo_unitario * qta, 2)
                     
+                    # Evita righe spazzatura se la descrizione è un numero
+                    if not row["CODICE"] and not row["FAM"] and len(row["DESCRIZIONE"]) < 3:
+                        continue
+                        
                     righe_estratte.append(row)
             
-            doc.close() # Rilascia il file dalla memoria
+            doc.close()
 
         except Exception as e:
-            st.error(f"Errore durante l'elaborazione di {file.name}: {e}")
+            st.error(f"Errore file {file.name}: {e}")
 
     if righe_estratte:
         df = pd.DataFrame(righe_estratte, columns=colonne_magazzino)
-        st.success(f"✅ Analisi completata. Trovate {len(righe_estratte)} righe.")
-        st.dataframe(df, use_container_width=True)
+        st.success(f"✅ Trovate {len(righe_estratte)} righe.")
+        
+        # Visualizzazione tabella con chiave unica per evitare removeChild error
+        st.dataframe(df, use_container_width=True, key="data_editor_output")
 
-        # Generazione file Excel per il download
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Dati_Magazzino')
         
         st.download_button(
-            label="📥 SCARICA EXCEL PER IL MAGAZZINO",
+            label="📥 SCARICA EXCEL",
             data=buf.getvalue(),
-            file_name="Magazzino_Export.xlsx",
+            file_name="Export_Magazzino.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary"
+            type="primary",
+            key="download_btn_final"
         )
