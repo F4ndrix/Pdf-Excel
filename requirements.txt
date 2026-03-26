@@ -1,0 +1,5 @@
+streamlit
+pandas
+pymupdf
+openpyxl
+3.  **Deploy**: Carica entrambi su GitHub e collegali a **Streamlit Community Cloud**.
