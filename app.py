@@ -5,7 +5,7 @@ import re
 import io
 
 # Configurazione interfaccia per il Deploy
-st.set_page_config(page_title="PDF → Magazzino Excel", page_icon="📦", layout="wide")
+st.set_page_config(page_title="PDF → Excel", page_icon="📦", layout="wide")
 
 # CSS personalizzato per stabilizzare la UI e migliorare l'aspetto
 st.markdown("""
@@ -26,13 +26,13 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("📦 PDF → Magazzino Excel")
-st.write("Strumento ottimizzato per Doppler, Sacchi e IDG. Colonna 'N BOLLA' protetta (vuota).")
+st.write("Strumento ottimizzato per bolle IDG.")
 
 # Uso di colonne per organizzare meglio lo spazio
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    files = st.file_uploader("Trascina qui le tue Bolle/Fatture PDF", type="pdf", accept_multiple_files=True, key="file_uploader_main")
+    files = st.file_uploader("Trascina qui le tue Bolle PDF", type="pdf", accept_multiple_files=True, key="file_uploader_main")
 
 with col2:
     st.info("💡 Consiglio: Se l'app dà errore grafico, ricarica la pagina del browser.")
